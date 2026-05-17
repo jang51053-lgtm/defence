@@ -1,0 +1,1792 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>5-4 디펜스 - Random Defense</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #1a1a1a;
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        #game-container {
+            position: relative;
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+            border: 4px solid #2d1b18;
+            background-color: #4ade80;
+        }
+        canvas {
+            display: block;
+        }
+        .ui-panel {
+            background: linear-gradient(to bottom, #3e2723, #1b100c);
+            border-left: 4px solid #2d1b18;
+            color: white;
+        }
+        .tower-card {
+            background: #d7ccc8;
+            border: 2px solid #5d4037;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .tower-card:hover {
+            background: #f5f5f5;
+            transform: scale(1.05);
+        }
+        .tower-card.selected {
+            border-color: #ffeb3b;
+            box-shadow: 0 0 12px #ffeb3b;
+        }
+        .gacha-normal {
+            background: linear-gradient(45deg, #e0e0e0, #9e9e9e);
+            border: 2px solid #757575;
+        }
+        .gacha-legend {
+            background: linear-gradient(45deg, #ffd700, #ff8c00);
+            border: 2px solid #b8860b;
+            animation: pulse-border 2s infinite;
+        }
+        @keyframes pulse-border {
+            0% { box-shadow: 0 0 5px #ff8c00; }
+            50% { box-shadow: 0 0 15px #ffd700; }
+            100% { box-shadow: 0 0 5px #ff8c00; }
+        }
+        .go-button {
+            background: linear-gradient(to bottom, #76ff03, #33691e);
+            text-shadow: 1px 1px 2px black;
+            transition: transform 0.1s;
+        }
+        .go-button:active {
+            transform: scale(0.95);
+        }
+        .go-button:disabled {
+            opacity: 0.8;
+            cursor: not-allowed;
+        }
+        #status-bar {
+            background: #1b100c;
+            border-top: 3px solid #2d1b18;
+        }
+        .info-panel {
+            background: rgba(0,0,0,0.6);
+            border-radius: 8px;
+            padding: 10px;
+            margin-top: auto;
+            border: 1px solid #5d4037;
+        }
+        .overlay-screen {
+            background: rgba(15, 23, 42, 0.95);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            text-align: center;
+            z-index: 100;
+        }
+        .custom-btn {
+            background: linear-gradient(to bottom, #ffeb3b, #fbc02d);
+            color: #3e2723;
+            font-weight: 900;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            text-shadow: 0 1px 0 rgba(255,255,255,0.4);
+            transition: all 0.2s;
+        }
+        .custom-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container" class="flex overflow-hidden w-[1008px] h-[600px] select-none relative">
+    
+    <!-- 시작 화면 -->
+    <div id="start-screen" class="absolute inset-0 overlay-screen p-8 z-[200]">
+        <h1 class="text-5xl font-extrabold mb-4 tracking-wider drop-shadow-lg text-yellow-400">
+            5-4 디펜스 🎲
+        </h1>
+        <p class="text-md text-gray-300 mb-8 max-w-lg leading-relaxed">
+            랜덤 뽑기와 동일 영웅 합성을 통해 다가오는 적들을 막아내세요!<br>
+            보스를 쓰러뜨리면 특수 강화용 <strong>코인</strong>을 얻습니다.<br>
+            <strong>21라운드 하드코어 모드</strong>부터는 지옥이 펼쳐집니다!
+        </p>
+
+        <div class="w-72 bg-gray-800 rounded-full h-6 p-1 mb-4 border border-gray-600">
+            <div id="load-progress-bar" class="bg-red-500 h-full rounded-full transition-all duration-300" style="width: 0%;"></div>
+        </div>
+        <p id="load-status-text" class="text-sm text-red-300 font-semibold mb-6">
+            게임 에셋 로딩 중... (0%)
+        </p>
+
+        <button id="start-btn" class="custom-btn px-12 py-4 rounded-xl text-2xl uppercase tracking-widest" disabled onclick="startGame()">
+            START GAME
+        </button>
+    </div>
+
+    <!-- 시너지 알림 배너 -->
+    <div id="synergy-banner" class="absolute top-3 left-[400px] -translate-x-1/2 bg-gradient-to-r from-red-600 to-yellow-500 text-white font-black px-8 py-2 rounded-full shadow-[0_0_20px_#ffeb3b] z-[40] hidden border-2 border-yellow-200 animate-pulse text-lg tracking-widest">
+        🔥 단일 시너지 발동: [바나나 원숭이] 공격력 1.5배!
+    </div>
+
+    <!-- 밀린 숙제 모달 -->
+    <div id="homework-modal" class="absolute inset-0 bg-black/80 flex items-center justify-center p-4 z-50 hidden">
+        <div class="bg-amber-50 rounded-2xl border-4 border-amber-950 max-w-md w-full p-6 text-amber-950 shadow-2xl">
+            <div class="flex items-center space-x-2 mb-3">
+                <span class="text-2xl">📚</span>
+                <h3 class="text-xl font-black text-amber-900">밀린 숙제 검사!</h3>
+            </div>
+            <div id="quiz-difficulty" class="inline-block px-3 py-1 bg-amber-200 text-xs font-bold rounded-full mb-3 text-amber-800">어려운 문장제</div>
+            <p id="quiz-question" class="text-base font-bold mb-6 leading-relaxed bg-white p-4 rounded-lg border border-amber-200 shadow-inner">
+                질문 내용이 이곳에 들어갑니다.
+            </p>
+            <div id="quiz-options" class="grid grid-cols-1 gap-2">
+                <!-- 선택 버튼들이 동적으로 채워짐 -->
+            </div>
+            <div class="mt-5 flex justify-between items-center border-t border-amber-200 pt-3">
+                <button id="skip-hw-btn" onclick="skipAllHomework()" class="text-[11px] bg-red-100 text-red-600 hover:bg-red-600 hover:text-white font-black px-4 py-2 border border-red-500 rounded transition-colors shadow">
+                    맞고 넘어가기 (-10 HP)
+                </button>
+                <button onclick="closeHomeworkModal()" class="text-sm text-gray-500 hover:text-gray-800 font-semibold px-4 py-2">숙제 덮어두기</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 범용 인게임 메시지 패널 -->
+    <div id="game-toast" class="absolute top-16 left-[400px] -translate-x-1/2 px-6 py-3 bg-red-600 border-2 border-yellow-400 text-white font-extrabold rounded-lg shadow-2xl transition-all duration-300 transform scale-0 z-50 pointer-events-none">
+        경고 메시지
+    </div>
+
+    <!-- 게임 오버 모달 -->
+    <div id="gameover-modal" class="absolute inset-0 bg-black/95 flex flex-col items-center justify-center z-50 hidden">
+        <h2 id="end-title" class="text-6xl font-black mb-4 text-red-600 tracking-wider">GAME OVER</h2>
+        <p id="end-desc" class="text-xl text-gray-300 mb-8 max-w-md text-center">킹상우가 쓰러졌습니다...</p>
+        <button class="custom-btn px-10 py-3 rounded-xl text-xl uppercase tracking-widest" onclick="location.reload()">
+            다시 도전하기
+        </button>
+    </div>
+
+    <!-- 50라운드 승리 모달 -->
+    <div id="victory-modal" class="absolute inset-0 bg-white/95 flex flex-col items-center justify-center z-[250] hidden">
+        <div class="text-8xl mb-4">👑</div>
+        <h2 class="text-6xl font-black mb-6 text-yellow-500 tracking-widest drop-shadow-md">VICTORY!</h2>
+        <p class="text-2xl text-gray-800 mb-8 max-w-lg text-center font-bold leading-relaxed">
+            "고맙네 용사여! 자네 덕분에 왕국이 살았어!<br>
+            내 자네를 위한 보상으로 <span class="text-yellow-600">4코인</span>과 <span class="text-red-500">할인 쿠폰</span>을 주겠노라!"<br><br>
+            <span class="text-sm text-gray-500">(50라운드 완전 클리어!)</span>
+        </p>
+        <button class="custom-btn px-10 py-3 rounded-xl text-xl uppercase tracking-widest" onclick="location.reload()">
+            기쁨의 환생(재시작)
+        </button>
+    </div>
+
+    <!-- 타워 도감 모달 -->
+    <div id="dictionary-modal" class="absolute inset-0 bg-black/90 flex flex-col items-center justify-center z-[150] hidden">
+        <div class="bg-slate-800 rounded-2xl border-4 border-slate-600 max-w-2xl w-full p-6 text-white shadow-2xl relative">
+            <button onclick="closeDictionary()" class="absolute top-4 right-4 text-gray-400 hover:text-white text-3xl font-bold transition-colors">&times;</button>
+            <h3 class="text-2xl font-black text-yellow-400 mb-4 text-center border-b border-gray-600 pb-2">📖 타워 도감</h3>
+            <div class="grid grid-cols-2 gap-4 overflow-y-auto max-h-[400px] p-2">
+                <div class="bg-slate-700 p-3 rounded-lg border border-slate-500 flex items-start space-x-3">
+                    <div class="text-4xl">🐒</div>
+                    <div><h4 class="font-bold text-yellow-300">바나나 원숭이</h4><p class="text-[11px] text-gray-300 mt-1">단일 대상을 공격하는 기본 타워입니다. 무난하고 안정적인 공격력을 가집니다.</p></div>
+                </div>
+                <div class="bg-slate-700 p-3 rounded-lg border border-slate-500 flex items-start space-x-3">
+                    <div class="text-4xl">🐸</div>
+                    <div><h4 class="font-bold text-yellow-300">방사 개구리</h4><p class="text-[11px] text-gray-300 mt-1">주변 8방향(만렙 시 12방향)으로 알을 쏘아보내는 광역 수비 타워입니다.</p></div>
+                </div>
+                <div class="bg-slate-700 p-3 rounded-lg border border-slate-500 flex items-start space-x-3">
+                    <div class="text-4xl">🐘</div>
+                    <div><h4 class="font-bold text-yellow-300">폭풍 코끼리</h4><p class="text-[11px] text-gray-300 mt-1">적들을 관통하는 물줄기를 쏩니다. 레벨이 오를수록 강력한 슬로우(최대 50%, 1초)를 부여합니다.</p></div>
+                </div>
+                <div class="bg-slate-700 p-3 rounded-lg border border-slate-500 flex items-start space-x-3">
+                    <div class="text-4xl">🐱</div>
+                    <div><h4 class="font-bold text-yellow-300">속박 고양이</h4><p class="text-[11px] text-gray-300 mt-1">클릭하여 발동하는 스킬로 적 1마리를 길게 속박합니다. 진화 시 최대 15초 동안 묶어둡니다.</p></div>
+                </div>
+                <div class="bg-slate-700 p-3 rounded-lg border border-slate-500 flex items-start space-x-3">
+                    <div class="text-4xl">🐍</div>
+                    <div><h4 class="font-bold text-yellow-300">맹독 독사</h4><p class="text-[11px] text-gray-300 mt-1">독니에 맞은 적은 5초간 감염되어 초당 치명적인 도트 데미지를 지속적으로 입습니다.</p></div>
+                </div>
+                <div class="bg-slate-800 p-3 rounded-lg border-2 border-red-500 flex items-start space-x-3 shadow-[0_0_10px_rgba(239,68,68,0.5)]">
+                    <div class="text-4xl">🐉</div>
+                    <div><h4 class="font-bold text-red-400">화염의 흑룡 (전설)</h4><p class="text-[11px] text-gray-300 mt-1">전설 뽑기에서 2% 극악 확률로 등장. 1성만 존재하며, 데미지 1000의 불덩이를 지속적으로 발사합니다.</p></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 메인 게임 캔버스 -->
+    <canvas id="gameCanvas" width="800" height="600" class="shrink-0 z-0"></canvas>
+
+    <!-- 패널 열기/닫기 토글 버튼 -->
+    <button id="panel-toggle-btn" onclick="togglePanel()" class="absolute top-1/2 right-[208px] -translate-y-1/2 bg-yellow-500 hover:bg-yellow-400 text-black font-black py-4 px-2 rounded-l-lg shadow-[0_0_15px_rgba(0,0,0,0.6)] border-y border-l border-yellow-700 z-30 transition-all duration-300">
+        ▶
+    </button>
+
+    <!-- 우측 패널 -->
+    <div id="ui-panel-container" class="ui-panel w-52 h-[600px] flex flex-col p-2 space-y-2 relative z-10 shrink-0 transition-transform duration-300 transform translate-x-0">
+        <!-- 길 편집 -->
+        <div class="border-b border-white/10 pb-2 space-y-1">
+            <button id="edit-path-btn" onclick="toggleEditPathMode()" class="w-full bg-slate-700 hover:bg-slate-600 text-white font-bold py-1.5 px-2 rounded shadow-md border border-slate-900 transition-all text-[11px] tracking-wider">
+                🛠️ 길 편집 ($30)
+            </button>
+            <button id="move-king-btn" onclick="toggleMoveKingMode()" class="hidden w-full bg-purple-700 hover:bg-purple-600 text-white font-bold py-1 px-2 rounded shadow border border-purple-900 transition-all text-[10px]">
+                👑 국왕 위치 변경
+            </button>
+            <button id="undo-path-btn" onclick="undoEdit()" disabled class="w-full bg-gray-800 text-gray-500 font-bold py-1 px-2 rounded shadow border border-gray-900 transition-all text-[10px] cursor-not-allowed">
+                ↩️ 편집 되돌리기
+            </button>
+        </div>
+        
+        <!-- 뽑기 상점 -->
+        <div class="text-center font-bold text-yellow-300 tracking-wider text-sm mt-1">뽑기 상점</div>
+        
+        <div class="flex flex-col gap-1 overflow-y-auto pr-1 flex-grow">
+            <div id="tower-random" class="tower-card gacha-normal p-1.5 rounded flex flex-col items-center text-black" onclick="setGhostTower('random', 150)">
+                <div class="text-2xl">🎲</div>
+                <span class="text-[10px] font-black text-gray-900">일반 랜덤 뽑기</span>
+                <span class="text-[9px] font-bold text-gray-700 text-center px-1">기본 동물 랜덤 1성</span>
+                <span class="text-xs font-black text-blue-800 mt-0.5">$150</span>
+            </div>
+
+            <div id="tower-legend" class="tower-card gacha-legend p-1.5 rounded flex flex-col items-center text-black" onclick="setGhostTower('legend', 800)">
+                <div class="text-2xl">🌟</div>
+                <span class="text-[10px] font-black text-red-900">전설 영웅 뽑기</span>
+                <span class="text-[9px] font-bold text-gray-800 text-center px-1">1~5성/극악 <span class="text-red-700 font-black">화염 흑룡</span></span>
+                <span class="text-xs font-black text-red-800 mt-0.5">$800</span>
+            </div>
+            
+            <!-- 공용 공격력 업그레이드 -->
+            <div id="upgrade-global-dmg" class="tower-card relative p-1.5 rounded flex flex-col items-center text-black bg-gradient-to-b from-orange-200 to-orange-400 border-orange-800" onclick="upgradeGlobalDamage()">
+                <span class="text-[10px] font-black text-red-900">⚔️ 전체 데미지 +1</span>
+                <span id="global-upgrade-cost-txt" class="text-[10px] font-black text-red-900 mt-0.5">$200</span>
+                <span id="global-upgrade-lv-txt" class="text-[8px] font-bold text-blue-900 absolute top-1 right-1 bg-white/80 px-1 rounded">Lv.0</span>
+            </div>
+            
+            <!-- 코인 전용 업그레이드 -->
+            <div class="text-center font-bold text-yellow-300 tracking-wider text-[11px] pt-1 border-t border-white/20">특수 코인 강화 (영구 +5)</div>
+            <div class="grid grid-cols-2 gap-1 mt-0.5">
+                <button onclick="spendCoin('monkey')" class="bg-slate-700 hover:bg-slate-600 text-white font-bold text-[9px] py-1 rounded border border-slate-500">🐒 원숭이</button>
+                <button onclick="spendCoin('frog')" class="bg-slate-700 hover:bg-slate-600 text-white font-bold text-[9px] py-1 rounded border border-slate-500">🐸 개구리</button>
+                <button onclick="spendCoin('elephant')" class="bg-slate-700 hover:bg-slate-600 text-white font-bold text-[9px] py-1 rounded border border-slate-500">🐘 코끼리</button>
+                <button onclick="spendCoin('viper')" class="bg-slate-700 hover:bg-slate-600 text-white font-bold text-[9px] py-1 rounded border border-slate-500">🐍 독사</button>
+                <button onclick="spendCoin('cat')" class="bg-slate-700 hover:bg-slate-600 text-white font-bold text-[9px] py-1 rounded border border-slate-500 col-span-2">🐱 고양이</button>
+            </div>
+            
+            <!-- 밀린 숙제 풀기 -->
+            <div class="text-center font-bold text-red-300 tracking-wider text-[11px] pt-1 border-t border-white/20 mt-1">📚 밀린 숙제 풀기</div>
+            <div class="mt-0.5 mb-1 pb-2 border-b border-white/10">
+                <button id="homework-btn" onclick="openHomeworkModal()" class="w-full bg-slate-700 text-gray-400 font-bold text-[10px] py-1.5 rounded border border-slate-600 transition-colors cursor-not-allowed" disabled>
+                    밀린 숙제 없음!
+                </button>
+            </div>
+        </div>
+
+        <!-- 타워 상세 정보창 -->
+        <div id="detail-panel" class="info-panel hidden flex flex-col space-y-1 text-[10px] mt-1">
+            <div class="font-bold text-yellow-400 text-xs border-b border-white/20 pb-0.5" id="detail-name">타워 정보</div>
+            <div class="flex justify-between"><span>성장 등급:</span> <span id="detail-lv" class="font-bold text-yellow-300">1</span></div>
+            <div class="flex justify-between"><span>최종 데미지:</span> <span id="detail-dmg" class="font-bold text-red-300">0</span></div>
+            
+            <button id="cat-ability-btn" onclick="activateCatAbility()" class="bg-yellow-500 hover:bg-yellow-400 text-black p-1.5 rounded font-black mt-1 hidden transition-colors">
+                ⚡ 속박 발동 (1회)
+            </button>
+
+            <!-- 합성(업그레이드) 버튼 -->
+            <button onclick="mergeSelectedTower()" class="bg-blue-600 hover:bg-blue-500 p-1.5 rounded font-bold mt-1 transition-colors flex flex-col items-center">
+                <span>조합 (MERGE)</span>
+                <span class="text-[8px] font-normal text-blue-200">동일한 타워 1개 필요</span>
+            </button>
+            <div class="grid grid-cols-2 gap-1 mt-1">
+                <button onclick="moveSelectedTower()" class="bg-purple-600 hover:bg-purple-500 p-1 rounded font-bold text-white transition-colors">
+                    MOVE (이동)
+                </button>
+                <button onclick="sellSelectedTower()" class="bg-red-600 hover:bg-red-500 p-1 rounded font-bold transition-colors">
+                    SELL (<span id="sell-price">$0</span>)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 하단 정보 표시줄 -->
+    <div id="status-bar" class="absolute bottom-0 left-0 h-14 flex items-center px-4 justify-between text-white z-20 transition-all duration-300" style="width: calc(100% - 208px);">
+        <div class="flex space-x-5 items-center">
+            <div class="flex flex-col">
+                <span class="text-[10px] text-gray-400 font-bold">ROUND</span>
+                <span id="round-val" class="text-2xl text-yellow-500 font-black leading-none">1<span class="text-xs text-gray-500">/50</span></span>
+            </div>
+            <div class="flex flex-col">
+                <span class="text-[10px] text-gray-400 font-bold">MONEY</span>
+                <span id="money-val" class="text-2xl text-green-400 font-black leading-none">$450</span>
+            </div>
+            <div class="flex flex-col">
+                <span class="text-[10px] text-gray-400 font-bold">COINS</span>
+                <span id="coin-val" class="text-2xl text-yellow-300 font-black leading-none">0</span>
+            </div>
+            <div class="flex flex-col">
+                <span class="text-[10px] text-gray-400 font-bold">KING HP</span>
+                <div class="flex items-center space-x-2">
+                    <span id="lives-val" class="text-2xl text-red-500 font-black leading-none">150</span>
+                    <button onclick="openDictionary()" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] px-2 py-0.5 rounded font-bold shadow-md transition-all">📖 도감</button>
+                </div>
+            </div>
+        </div>
+        <button id="go-btn" class="go-button px-10 h-10 rounded-lg font-black italic text-2xl flex items-center justify-center shadow-lg" onclick="startWave()">
+            GO!
+        </button>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const moneyEl = document.getElementById('money-val');
+    const coinEl = document.getElementById('coin-val');
+    const livesEl = document.getElementById('lives-val');
+    const roundEl = document.getElementById('round-val');
+    const goBtn = document.getElementById('go-btn');
+    const detailPanel = document.getElementById('detail-panel');
+    const startScreen = document.getElementById('start-screen');
+    const startBtn = document.getElementById('start-btn');
+    const progressBar = document.getElementById('load-progress-bar');
+    const statusText = document.getElementById('load-status-text');
+    const toast = document.getElementById('game-toast');
+    const catAbilityBtn = document.getElementById('cat-ability-btn');
+    const synergyBanner = document.getElementById('synergy-banner');
+
+    // 하드코어 초기 밸런스 및 시스템 변수
+    let money = 450; 
+    let lives = 150;
+    let round = 1;
+    let upgradeCoins = 0;
+    const MAX_ROUND = 50;
+
+    let isWaveActive = false;
+    let isGameRunning = false;
+    let isBossWave = false;
+    
+    let waveEnemiesSpawned = 0;
+    let waveEnemiesTotal = 0;
+    
+    let ghostTower = null; 
+    let selectedTower = null; 
+    let mousePos = { x: 0, y: 0 };
+
+    // 길 편집 모드
+    let isEditPathMode = false;
+    let isMovingKing = false;
+    let isPathValid = true;
+    
+    // 숙제 전역 변수
+    let normalHomework = 0;
+    let bossHomework = 0;
+    let currentHomeworkType = '';
+
+    // 업그레이드 전역 변수
+    let globalDmgLv = 0;
+    let globalDmgCost = 200;
+    let towerBonusDmg = { monkey: 0, frog: 0, elephant: 0, cat: 0, viper: 0 };
+    let activeSynergy = null;
+
+    const CELL_SIZE = 40;
+    const COLS = 20;
+    const ROWS = 15;
+    let grid = []; 
+    let editHistory = []; 
+
+    let START_CELL = { x: 0, y: 7 };
+    let END_CELL = { x: 19, y: 7 };
+    let kingPos = { x: 0, y: 0 };
+
+    let isSelectingCatTarget = false;
+    let kingShakeTime = 0;
+    let kingBubbleText = "";
+    let kingBubbleTimer = 0;
+
+    const enemyImgUrls = {
+        1: "https://i.imgur.com/vPJtjWU.png", 2: "https://i.imgur.com/RSyUgIv.png",
+        3: "https://i.imgur.com/ASVOQzL.png", 4: "https://i.imgur.com/zsUPBXh.png",
+        5: "https://i.imgur.com/XPzVsYZ.png", 6: "https://i.imgur.com/LtT6zr5.png",
+        7: "https://i.imgur.com/Aq3OKr9.png", 8: "https://i.imgur.com/9xnXkEj.png",
+        9: "https://i.imgur.com/O6zCxEf.png", 10: "https://i.imgur.com/9zNmLow.png",
+        11: "https://i.imgur.com/gDTTmTZ.png", 12: "https://i.imgur.com/En8Ryh2.png",
+        13: "https://i.imgur.com/TCQCuUX.png", 14: "https://i.imgur.com/EQ3lEj4.png",
+        15: "https://i.imgur.com/erLd7ib.png", 16: "https://i.imgur.com/cBt317I.png",
+        17: "https://i.imgur.com/yMeElZ0.png"
+    };
+
+    const enemyImages = {};
+    let loadedImageCount = 0;
+    const totalImageCount = Object.keys(enemyImgUrls).length;
+    let activePath = [];
+
+    // 숙제 은행 대폭 추가 (학습 영역 다양화)
+    const easyQuizzes = [
+        // 혼합 계산
+        { q: "12 + 8 × 2의 값은?", a: "28", o: ["40", "28", "32", "20"] },
+        { q: "(24 - 6) ÷ 3의 값은?", a: "6", o: ["6", "18", "12", "8"] },
+        { q: "15 + 5 × 3의 값은?", a: "30", o: ["30", "60", "25", "45"] },
+        { q: "50 - (12 + 8) ÷ 4의 값은?", a: "45", o: ["45", "40", "35", "5"] },
+        { q: "3 × (10 - 4) + 2의 값은?", a: "20", o: ["20", "24", "18", "32"] },
+        { q: "48 ÷ 6 + 2 × 5의 값은?", a: "18", o: ["18", "16", "50", "20"] },
+        { q: "100 - 20 × 3 + 10의 값은?", a: "50", o: ["50", "40", "250", "70"] },
+        // 최대공약수 / 최소공배수
+        { q: "18과 24의 최대공약수(GCD)는?", a: "6", o: ["3", "4", "6", "12"] },
+        { q: "4과 6의 최소공배수(LCM)는?", a: "12", o: ["10", "12", "24", "18"] },
+        { q: "15와 25의 최대공약수(GCD)는?", a: "5", o: ["5", "10", "15", "25"] },
+        { q: "12와 16의 최소공배수(LCM)는?", a: "48", o: ["24", "36", "48", "64"] },
+        { q: "8과 12의 최소공배수(LCM)는?", a: "24", o: ["16", "24", "32", "48"] },
+        { q: "14와 21의 최대공약수(GCD)는?", a: "7", o: ["7", "14", "3", "2"] },
+        { q: "6과 9의 최소공배수(LCM)는?", a: "18", o: ["12", "18", "27", "36"] },
+        // 약분과 통분
+        { q: "12/16을 기약분수로 나타내면?", a: "3/4", o: ["2/3", "3/4", "4/5", "5/8"] },
+        { q: "20/30을 기약분수로 나타내면?", a: "2/3", o: ["1/2", "2/3", "3/4", "4/5"] },
+        { q: "18/27을 기약분수로 나타내면?", a: "2/3", o: ["1/3", "2/3", "3/4", "6/9"] },
+        { q: "2/3과 3/5을 통분할 때 가장 작은 공통분모는?", a: "15", o: ["10", "15", "8", "30"] },
+        { q: "3/8과 5/12를 통분할 때 가장 작은 공통분모는?", a: "24", o: ["16", "20", "24", "48"] },
+        { q: "5/6과 3/4을 통분할 때 가장 작은 공통분모는?", a: "12", o: ["10", "12", "18", "24"] }
+    ];
+
+    const hardQuizzes = [
+        // 문장제 및 대응관계
+        { q: "어느 목장에 오리와 소가 합하여 10마리 있습니다. 다리의 수의 합이 26개일 때, 오리는 몇 마리입니까?", a: "7마리", o: ["5마리", "6마리", "7마리", "3마리"] },
+        { q: "형의 나이는 동생의 나이의 2배보다 1살 적습니다. 형이 15살일 때, 동생의 나이는?", a: "8살", o: ["7살", "8살", "9살", "10살"] },
+        { q: "1분에 80m를 걷는 사람이 2km를 걷는 데 걸리는 시간은?", a: "25분", o: ["20분", "25분", "30분", "40분"] },
+        { q: "기차가 일정한 속력으로 3시간 동안 240km를 달렸습니다. 같은 속력으로 5시간을 달리면 몇 km를 갈 수 있습니까?", a: "400km", o: ["360km", "380km", "400km", "420km"] },
+        { q: "어떤 수를 3으로 나누어야 할 것을 잘못하여 3을 곱했더니 45가 되었습니다. 바르게 계산한 결과는?", a: "5", o: ["5", "10", "15", "135"] },
+        { q: "사과 3개의 가격이 2400원입니다. 사과 8개의 가격은 얼마입니까?", a: "6400원", o: ["5600원", "6400원", "7200원", "8000원"] },
+        { q: "길이가 120m인 기차가 초속 20m로 달리고 있습니다. 길이가 480m인 터널을 완전히 통과하는 데 걸리는 시간은?", a: "30초", o: ["24초", "30초", "36초", "40초"] },
+        { q: "A가 혼자 하면 6일, B가 혼자 하면 12일 걸리는 일이 있습니다. 두 사람이 함께 일하면 며칠 만에 끝날까요?", a: "4일", o: ["3일", "4일", "5일", "6일"] },
+        { q: "농도가 10%인 소금물 200g이 있습니다. 여기에 물 50g을 더 넣으면 농도는 몇 %가 될까요?", a: "8%", o: ["5%", "8%", "10%", "12%"] },
+        { q: "톱니가 24개인 톱니바퀴 A와 36개인 톱니바퀴 B가 맞물려 돕니다. A가 3번 회전할 때 B는 몇 번 회전할까요?", a: "2번", o: ["1.5번", "2번", "3번", "4번"] }
+    ];
+
+    let activeQuizObj = null;
+
+    // 타워 스탯 백과사전
+    const TOWER_STATS = {
+        monkey: { damage: [10, 22, 60, 150, 500], fireRate: [38, 34, 30, 26, 20], range: [130, 150, 170, 190, 210] },
+        frog: { damage: [6, 15, 40, 100, 300], fireRate: [75, 70, 64, 58, 50], range: [110, 130, 150, 170, 190] },
+        elephant: { damage: [6, 15, 40, 90, 250], fireRate: [55, 55, 55, 55, 55], range: [160, 180, 200, 220, 240], slowFactor: [0.1, 0.2, 0.3, 0.4, 0.5] },
+        cat: { damage: [3, 6, 20, 40, 80], fireRate: [45, 45, 45, 45, 45], range: [95, 115, 135, 155, 175], stunFrames: [180, 300, 480, 600, 900] },
+        viper: { damage: [5, 10, 30, 60, 200], fireRate: [60, 60, 60, 60, 60], range: [140, 160, 180, 200, 220], poisonDot: [1, 2, 3, 4, 7] },
+        dragon: { damage: [1000, 1000, 1000, 1000, 1000], fireRate: [20, 20, 20, 20, 20], range: [220, 220, 220, 220, 220] }
+    };
+
+    let isPanelOpen = true;
+    function togglePanel() {
+        isPanelOpen = !isPanelOpen;
+        const panel = document.getElementById('ui-panel-container');
+        const btn = document.getElementById('panel-toggle-btn');
+        const statusBar = document.getElementById('status-bar');
+        
+        if (isPanelOpen) {
+            panel.style.transform = 'translateX(0)';
+            btn.style.right = '208px';
+            btn.innerText = '▶';
+            statusBar.style.width = 'calc(100% - 208px)';
+        } else {
+            panel.style.transform = 'translateX(100%)';
+            btn.style.right = '0px';
+            btn.innerText = '◀';
+            statusBar.style.width = '100%';
+        }
+    }
+
+    function openDictionary() { document.getElementById('dictionary-modal').classList.remove('hidden'); }
+    function closeDictionary() { document.getElementById('dictionary-modal').classList.add('hidden'); }
+
+    function openHomeworkModal() {
+        if (normalHomework === 0 && bossHomework === 0) {
+            showToast("밀린 숙제가 없습니다! 편안하게 쉬세요.", "bg-green-600");
+            return;
+        }
+
+        currentHomeworkType = bossHomework > 0 ? 'boss' : 'normal';
+        const quizList = currentHomeworkType === 'boss' ? hardQuizzes : easyQuizzes;
+        activeQuizObj = quizList[Math.floor(Math.random() * quizList.length)];
+
+        const diffEl = document.getElementById('quiz-difficulty');
+        diffEl.innerText = currentHomeworkType === 'boss' ? "어려운 문장제 (보스급)" : "기초 수학 (일반 몹)";
+        diffEl.className = currentHomeworkType === 'boss' ? "inline-block px-3 py-1 bg-red-200 text-xs font-bold rounded-full mb-3 text-red-800" : "inline-block px-3 py-1 bg-amber-200 text-xs font-bold rounded-full mb-3 text-amber-800";
+        
+        document.getElementById('quiz-question').innerText = activeQuizObj.q;
+
+        const optionsDiv = document.getElementById('quiz-options');
+        optionsDiv.innerHTML = '';
+
+        const choices = [...activeQuizObj.o].sort(() => Math.random() - 0.5);
+
+        choices.forEach(val => {
+            const btn = document.createElement('button');
+            btn.className = "w-full text-left p-3 rounded-lg bg-white hover:bg-amber-100 border border-amber-300 font-bold transition-all text-sm text-amber-950";
+            btn.innerText = val;
+            btn.onclick = () => submitHomeworkAnswer(val);
+            optionsDiv.appendChild(btn);
+        });
+
+        // 스킵 버튼 데미지 계산 반영
+        const totalHomework = normalHomework + bossHomework;
+        const skipDamage = totalHomework * 10;
+        document.getElementById('skip-hw-btn').innerText = `모든 숙제 포기 (-${skipDamage} HP)`;
+
+        document.getElementById('homework-modal').classList.remove('hidden');
+    }
+
+    function closeHomeworkModal() {
+        document.getElementById('homework-modal').classList.add('hidden');
+        activeQuizObj = null;
+    }
+
+    function submitHomeworkAnswer(val) {
+        if (val === activeQuizObj.a) {
+            if (currentHomeworkType === 'boss') bossHomework--;
+            else normalHomework--;
+            
+            showToast("정답입니다! 숙제 하나를 해결했습니다.", "bg-blue-600");
+            closeHomeworkModal();
+            updateUI();
+        } else {
+            showToast("💥 오답입니다! 숙제는 그대로 남습니다.", "bg-red-600 animate-bounce");
+            closeHomeworkModal();
+        }
+    }
+
+    function skipAllHomework() {
+        const totalHomework = normalHomework + bossHomework;
+        const damage = totalHomework * 10;
+        
+        lives -= damage;
+        if (lives < 0) lives = 0;
+        
+        kingShakeTime = 30;
+        kingBubbleText = `밀린 숙제를 안 하다니!! (-${damage})`;
+        kingBubbleTimer = 100;
+        
+        normalHomework = 0;
+        bossHomework = 0;
+        
+        showToast(`숙제를 포기하여 국왕님이 ${damage}의 뼈아픈 피해를 입었습니다!`, "bg-red-700 animate-bounce");
+        closeHomeworkModal();
+        updateUI();
+        
+        if (lives <= 0) handleGameOver();
+    }
+
+    function upgradeGlobalDamage() {
+        if (money >= globalDmgCost) {
+            money -= globalDmgCost;
+            globalDmgLv++;
+            globalDmgCost += 100;
+            showToast(`⚔️ 전체 타워 공격력이 강화되었습니다! (Lv.${globalDmgLv})`, "bg-red-600");
+            updateUI();
+            if(selectedTower) updateDetailPanel();
+        } else {
+            showToast(`자금이 부족합니다! ($${globalDmgCost} 필요)`, "bg-red-500");
+        }
+    }
+
+    function spendCoin(type) {
+        if (upgradeCoins > 0) {
+            upgradeCoins--;
+            towerBonusDmg[type] += 5;
+            const names = {monkey:'원숭이', frog:'개구리', elephant:'코끼리', cat:'고양이', viper:'독사'};
+            showToast(`🪙 ${names[type]} 타워의 영구 공격력이 +5 증가했습니다!`, "bg-green-600");
+            updateUI();
+            if(selectedTower) updateDetailPanel();
+        } else {
+            showToast("업그레이드 코인이 부족합니다!", "bg-red-500");
+        }
+    }
+
+    function checkSynergy() {
+        let validTypes = new Set();
+        let validTowersCount = 0;
+        towers.forEach(t => {
+            if (t.type !== 'cat' && t.type !== 'dragon') {
+                validTypes.add(t.type);
+                validTowersCount++;
+            }
+        });
+
+        if (validTypes.size === 1 && validTowersCount > 0) {
+            activeSynergy = Array.from(validTypes)[0];
+        } else {
+            activeSynergy = null;
+        }
+
+        if (activeSynergy) {
+            const names = {monkey:'바나나 원숭이', frog:'방사 개구리', elephant:'폭풍 코끼리', viper:'맹독 독사'};
+            synergyBanner.innerHTML = `🔥 단일 시너지 발동: <strong>[${names[activeSynergy]}]</strong> 공격력 1.5배!`;
+            synergyBanner.classList.remove('hidden');
+        } else {
+            synergyBanner.classList.add('hidden');
+        }
+    }
+
+    function initGrid() {
+        for (let x = 0; x < COLS; x++) {
+            grid[x] = [];
+            for (let y = 0; y < ROWS; y++) grid[x][y] = 0; 
+        }
+        for (let x = 0; x <= 19; x++) grid[x][7] = 1;
+        
+        kingPos = { x: END_CELL.x * CELL_SIZE + CELL_SIZE / 2, y: END_CELL.y * CELL_SIZE + CELL_SIZE / 2 };
+
+        const calculated = calculatePath();
+        if (calculated) { activePath = calculated; isPathValid = true; } 
+        else { isPathValid = false; }
+    }
+
+    function calculatePath() {
+        const queue = [];
+        const visited = {};
+        const parent = {};
+
+        const startKey = `${START_CELL.x},${START_CELL.y}`;
+        queue.push({ x: START_CELL.x, y: START_CELL.y });
+        visited[startKey] = true;
+        let found = false;
+
+        while (queue.length > 0) {
+            const curr = queue.shift();
+            if (curr.x === END_CELL.x && curr.y === END_CELL.y) {
+                found = true; break;
+            }
+            const directions = [{ dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }];
+            for (const dir of directions) {
+                const nx = curr.x + dir.dx;
+                const ny = curr.y + dir.dy;
+                const key = `${nx},${ny}`;
+                if (nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS) {
+                    if (grid[nx][ny] === 1 && !visited[key]) {
+                        visited[key] = true;
+                        parent[key] = curr;
+                        queue.push({ x: nx, y: ny });
+                    }
+                }
+            }
+        }
+
+        if (!found) return null;
+
+        const cellPath = [];
+        let curr = { x: END_CELL.x, y: END_CELL.y };
+        while (curr) {
+            cellPath.push(curr);
+            const key = `${curr.x},${curr.y}`;
+            curr = parent[key];
+        }
+        cellPath.reverse();
+
+        const pixelPath = [];
+        pixelPath.push({ x: -20, y: START_CELL.y * CELL_SIZE + CELL_SIZE / 2 });
+        for (const cell of cellPath) {
+            pixelPath.push({ x: cell.x * CELL_SIZE + CELL_SIZE / 2, y: cell.y * CELL_SIZE + CELL_SIZE / 2 });
+        }
+        return pixelPath;
+    }
+
+    function showToast(msg, colorClass = "bg-green-600") {
+        toast.innerText = msg;
+        toast.className = `absolute top-16 left-[400px] -translate-x-1/2 px-8 py-4 border-2 border-yellow-400 text-white font-extrabold text-lg rounded-xl shadow-[0_0_20px_rgba(0,0,0,0.8)] transition-all duration-300 transform z-50 ${colorClass}`;
+        toast.style.transform = 'translate(-50%, 0) scale(1)';
+        setTimeout(() => { toast.style.transform = 'translate(-50%, -20px) scale(0)'; }, 2500);
+    }
+
+    function preloadAssets() {
+        for (let lv in enemyImgUrls) {
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+            img.src = enemyImgUrls[lv];
+            img.onload = () => { enemyImages[lv] = img; onAssetLoaded(); };
+            img.onerror = () => { enemyImages[lv] = null; onAssetLoaded(); };
+        }
+    }
+
+    function onAssetLoaded() {
+        loadedImageCount++;
+        const percent = Math.floor((loadedImageCount / totalImageCount) * 100);
+        progressBar.style.width = percent + '%';
+        statusText.innerText = `게임 에셋 로딩 중... (${percent}%)`;
+
+        if (loadedImageCount >= totalImageCount) {
+            statusText.innerText = "모든 리소스 준비 완료! 하드코어 모드 가동!";
+            statusText.classList.replace('text-red-300', 'text-green-400');
+            startBtn.disabled = false;
+        }
+    }
+
+    function startGame() {
+        startScreen.style.display = 'none';
+        isGameRunning = true;
+        initGrid();
+        gameLoop();
+    }
+
+    const towers = [];
+    let enemies = [];
+    const projectiles = [];
+    const beams = []; 
+    const particles = [];
+
+    // --- 객체 정의 ---
+
+    // 1. 적 (풍선 및 보스)
+    class Enemy {
+        constructor(enemyLevel, roundBonusHp = 0, isBoss = false, roundNum = 1, isHardcoreBoss = false) {
+            this.x = activePath[0].x;
+            this.y = activePath[0].y;
+            this.pathIndex = 0;
+            this.level = Math.min(enemyLevel, 17); 
+            this.isBoss = isBoss;
+            this.isHardcoreBoss = isHardcoreBoss;
+            
+            if (this.isBoss) {
+                this.baseSpeed = isHardcoreBoss ? 0.8 + (roundNum * 0.04) : 0.4 + (roundNum * 0.02); 
+                this.maxHp = ((roundNum * (isHardcoreBoss ? 150 : 35)) + 100) * 10; 
+                this.radius = isHardcoreBoss ? 42 : 35;
+                this.reward = 80 + roundNum * 15;
+                this.damageToKing = 50; 
+            } else {
+                this.baseSpeed = 1.3 + (this.level * 0.15); 
+                this.maxHp = (this.level + Math.floor(roundBonusHp)) * 10; 
+                this.radius = 18;
+                this.reward = 4 + Math.floor(this.level * 1.5); 
+                this.damageToKing = this.level;
+            }
+            
+            this.speed = this.baseSpeed;
+            this.hp = this.maxHp;
+            this.wobble = Math.random() * Math.PI * 2;
+
+            this.slowTimer = 0;   
+            this.stunTimer = 0;   
+            this.poisonTimer = 0; 
+            this.poisonTick = 0;
+        }
+
+        update() {
+            if (this.stunTimer > 0) {
+                this.stunTimer--;
+                this.speed = 0;
+            } else if (this.slowTimer > 0) {
+                this.slowTimer--;
+                this.speed = this.baseSpeed * (1 - (this.slowFactor || 0.5)); 
+            } else {
+                this.speed = this.baseSpeed;
+                this.slowFactor = 0;
+            }
+
+            if (this.poisonTimer > 0) {
+                this.poisonTimer--;
+                this.poisonTick++;
+                if (this.poisonTick >= 30) { 
+                    this.hp -= (this.poisonDamage || 1);
+                    this.poisonTick = 0;
+                    if (this.hp <= 0) { this.destroyAndReward(); return; }
+                }
+            }
+
+            const target = activePath[this.pathIndex + 1];
+            if (!target) return;
+
+            const dx = target.x - this.x;
+            const dy = target.y - this.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist < this.speed) {
+                this.pathIndex++;
+                if (this.pathIndex >= activePath.length - 1) this.reachEnd();
+            } else {
+                this.x += (dx / dist) * this.speed;
+                this.y += (dy / dist) * this.speed;
+            }
+            this.wobble += (this.isBoss ? 0.04 : 0.1);
+        }
+
+        destroyAndReward() {
+            const idx = enemies.indexOf(this);
+            if (idx > -1) {
+                money += this.reward;
+                if (this.isBoss) {
+                    upgradeCoins++;
+                    showToast("💀 보스 처치! 대량의 자금과 🪙 코인 1개 획득!", "bg-yellow-600");
+                    createParticles(this.x, this.y, '#ff0000', 40);
+                }
+                enemies.splice(idx, 1);
+                updateUI();
+            }
+        }
+
+        draw() {
+            ctx.save();
+            ctx.translate(this.x, this.y + Math.sin(this.wobble) * (this.isBoss ? 4 : 2.5));
+
+            if (this.stunTimer > 0) {
+                ctx.beginPath(); ctx.arc(0, 0, this.radius + 8, 0, Math.PI * 2);
+                ctx.strokeStyle = '#e91e63'; ctx.lineWidth = 4; ctx.stroke();
+            } else if (this.slowTimer > 0) {
+                ctx.beginPath(); ctx.arc(0, 0, this.radius + 5, 0, Math.PI * 2);
+                ctx.strokeStyle = '#2196f3'; ctx.lineWidth = 3; ctx.stroke();
+            }
+            if (this.poisonTimer > 0) {
+                ctx.beginPath(); ctx.arc(0, 0, this.radius + 2, 0, Math.PI * 2);
+                ctx.strokeStyle = '#9c27b0'; ctx.lineWidth = 2; ctx.stroke();
+            }
+
+            if (this.isBoss) {
+                this.drawBossBalloon();
+            } else {
+                const img = enemyImages[this.level];
+                if (img) {
+                    try {
+                        const size = this.radius * 2.2;
+                        ctx.drawImage(img, -size/2, -size/2, size, size);
+                    } catch (e) { this.drawFallbackBalloon(); }
+                } else { this.drawFallbackBalloon(); }
+            }
+
+            if (this.hp < this.maxHp) {
+                const barWidth = this.isBoss ? 60 : this.radius * 2;
+                const barHeight = this.isBoss ? 8 : 4;
+                ctx.fillStyle = '#ef4444';
+                ctx.fillRect(-barWidth/2, -this.radius - 12, barWidth, barHeight);
+                ctx.fillStyle = '#22c55e';
+                ctx.fillRect(-barWidth/2, -this.radius - 12, barWidth * (this.hp / this.maxHp), barHeight);
+            }
+            ctx.restore();
+        }
+
+        drawBossBalloon() {
+            if (this.isHardcoreBoss) {
+                ctx.beginPath(); ctx.ellipse(0, 0, this.radius * 0.9, this.radius * 1.1, 0, 0, Math.PI * 2);
+                const grad = ctx.createRadialGradient(0, 0, 5, 0, 0, this.radius);
+                grad.addColorStop(0, '#8e24aa'); grad.addColorStop(1, '#311b92');
+                ctx.fillStyle = grad; ctx.fill();
+                
+                ctx.fillStyle = '#ff1744';
+                ctx.beginPath(); ctx.moveTo(-20, -15); ctx.lineTo(-35, -40); ctx.lineTo(-5, -30); ctx.fill();
+                ctx.beginPath(); ctx.moveTo(20, -15); ctx.lineTo(35, -40); ctx.lineTo(5, -30); ctx.fill();
+                ctx.beginPath(); ctx.moveTo(-10, -25); ctx.lineTo(-15, -45); ctx.lineTo(0, -35); ctx.fill();
+                ctx.beginPath(); ctx.moveTo(10, -25); ctx.lineTo(15, -45); ctx.lineTo(0, -35); ctx.fill();
+
+                ctx.fillStyle = '#ffea00';
+                ctx.beginPath(); ctx.ellipse(-10, 5, 6, 3, Math.PI/4, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.ellipse(10, 5, 6, 3, -Math.PI/4, 0, Math.PI*2); ctx.fill();
+            } else {
+                ctx.beginPath(); ctx.moveTo(0, this.radius * 0.9); ctx.lineTo(-8, this.radius * 0.9 + 10); ctx.lineTo(8, this.radius * 0.9 + 10); ctx.fillStyle = '#111'; ctx.fill();
+                ctx.beginPath(); ctx.ellipse(0, 0, this.radius * 0.85, this.radius, 0, 0, Math.PI * 2);
+                const grad = ctx.createRadialGradient(-10, -10, 5, 0, 0, this.radius);
+                grad.addColorStop(0, '#555'); grad.addColorStop(1, '#000');
+                ctx.fillStyle = grad; ctx.fill();
+                
+                ctx.fillStyle = '#ff5252';
+                ctx.beginPath(); ctx.moveTo(-15, -20); ctx.lineTo(-25, -35); ctx.lineTo(-5, -25); ctx.fill();
+                ctx.beginPath(); ctx.moveTo(15, -20); ctx.lineTo(25, -35); ctx.lineTo(5, -25); ctx.fill();
+
+                ctx.fillStyle = '#ff1744';
+                ctx.font = 'bold 24px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText("💀", 0, 0);
+            }
+        }
+
+        drawFallbackBalloon() {
+            const colors = { 1: '#f44336', 2: '#2196f3', 3: '#4caf50', 4: '#ffeb3b', 5: '#9c27b0', 10: '#607d8b', 15: '#ff5722', 17: '#333333' };
+            const color = colors[this.level] || '#e0e0e0';
+            ctx.beginPath(); ctx.ellipse(0, 0, this.radius * 0.8, this.radius, 0, 0, Math.PI * 2);
+            ctx.fillStyle = color; ctx.fill();
+            ctx.fillStyle = '#fff'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(this.level, 0, 0);
+        }
+
+        reachEnd() {
+            lives -= this.damageToKing; 
+            if (lives < 0) lives = 0;
+            
+            if (this.isBoss) bossHomework++;
+            else normalHomework++;
+
+            kingShakeTime = 20; 
+            triggerKingBubble(this.damageToKing, this.isBoss);
+
+            updateUI();
+            const idx = enemies.indexOf(this);
+            if (idx > -1) enemies.splice(idx, 1);
+            if (lives <= 0) handleGameOver();
+        }
+    }
+
+    function triggerKingBubble(damage, fromBoss) {
+        let textOptions = [];
+        if (fromBoss) {
+            textOptions = [`쿨럭!! 치명상이다! (-${damage})`, `보스를 막지 못하다니!!`, `왕국이 멸망한다...!`];
+        } else {
+            textOptions = [`아야! 아프다 상우! (-${damage})`, `적에게 질 수 없다!`, `진화가 더 필요하다!`];
+        }
+        kingBubbleText = textOptions[Math.floor(Math.random() * textOptions.length)];
+        kingBubbleTimer = 90; 
+    }
+
+
+    // 2. 타워 정의
+    class Tower {
+        constructor(x, y, type) {
+            this.x = x; this.y = y;
+            this.type = type; 
+            this.level = 1; this.kills = 0;
+            this.radius = type === 'dragon' ? 28 : 24; 
+            
+            this.hasUsedAbility = false; 
+            this.initStats();
+
+            this.timer = 0;
+        }
+
+        initStats() {
+            this.updateStatsByLevel();
+        }
+
+        updateStatsByLevel() {
+            const stats = TOWER_STATS[this.type];
+            const lvlIdx = this.level - 1;
+            
+            this.damage = stats.damage[lvlIdx];
+            this.fireRate = stats.fireRate[lvlIdx];
+            this.range = stats.range[lvlIdx];
+            
+            if(this.type === 'elephant') this.slowFactor = stats.slowFactor[lvlIdx];
+            if(this.type === 'cat') this.stunFrames = stats.stunFrames[lvlIdx];
+            if(this.type === 'viper') this.poisonDot = stats.poisonDot[lvlIdx];
+        }
+
+        get sellValue() { 
+            if (this.type === 'dragon') return 2000;
+            return 100 * Math.pow(2, this.level - 1); 
+        }
+
+        getFinalDamage() {
+            let dmg = this.damage + globalDmgLv;
+            if (towerBonusDmg[this.type]) {
+                dmg += towerBonusDmg[this.type];
+            }
+            if (activeSynergy === this.type) {
+                dmg = Math.floor(dmg * 1.5);
+            }
+            return dmg;
+        }
+
+        executeUpgrade() {
+            this.level++;
+            this.updateStatsByLevel();
+            updateUI(); updateDetailPanel();
+        }
+
+        update() {
+            this.timer++;
+            if (this.timer >= this.fireRate) {
+                if (this.type === 'frog') {
+                    if (this.isAnyEnemyInRange()) { this.fireRadial(); this.timer = 0; }
+                } else if (this.type === 'elephant') {
+                    const target = this.findTarget();
+                    if (target) { this.fireBeam(target); this.timer = 0; }
+                } else {
+                    const target = this.findTarget();
+                    if (target) { this.fire(target); this.timer = 0; }
+                }
+            }
+        }
+
+        isAnyEnemyInRange() {
+            for (const enemy of enemies) {
+                const dist = Math.sqrt((enemy.x - this.x)**2 + (enemy.y - this.y)**2);
+                if (dist < this.range) return true;
+            }
+            return false;
+        }
+
+        findTarget() {
+            let bestEnemy = null; let maxProgress = -1;
+            for (const enemy of enemies) {
+                const dist = Math.sqrt((enemy.x - this.x)**2 + (enemy.y - this.y)**2);
+                if (dist < this.range) {
+                    const progress = enemy.pathIndex * 1000 + (1000 - dist) + (enemy.isBoss ? 50000 : 0); 
+                    if (progress > maxProgress) { maxProgress = progress; bestEnemy = enemy; }
+                }
+            }
+            return bestEnemy;
+        }
+
+        fire(target) {
+            projectiles.push(new Projectile(this.x, this.y, target, this.type, this.getFinalDamage(), this));
+        }
+
+        fireBeam(target) {
+            const angle = Math.atan2(target.y - this.y, target.x - this.x);
+            const endX = this.x + Math.cos(angle) * this.range;
+            const endY = this.y + Math.sin(angle) * this.range;
+            
+            beams.push(new Beam(this.x, this.y, endX, endY, 15, 6 + this.level, '#00b0ff'));
+
+            const currentSlowFactor = this.slowFactor; 
+            const slowDuration = 60; 
+            const dmg = this.getFinalDamage();
+
+            enemies.forEach(e => {
+                if (this.distToSegment(e, {x: this.x, y: this.y}, {x: endX, y: endY}) < e.radius + 10) {
+                    e.hp -= dmg;
+                    e.slowTimer = e.isBoss ? 30 : slowDuration;
+                    e.slowFactor = currentSlowFactor;
+                    
+                    if (e.hp <= 0) {
+                        e.destroyAndReward();
+                        this.kills++;
+                        if (selectedTower === this) updateDetailPanel();
+                    }
+                }
+            });
+        }
+
+        distToSegment(p, v, w) {
+            let l2 = (w.x - v.x) * (w.x - v.x) + (w.y - v.y) * (w.y - v.y);
+            if (l2 === 0) return Math.sqrt((p.x - v.x)**2 + (p.y - v.y)**2);
+            let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
+            t = Math.max(0, Math.min(1, t));
+            let proj = { x: v.x + t * (w.x - v.x), y: v.y + t * (w.y - v.y) };
+            return Math.sqrt((p.x - proj.x)**2 + (p.y - proj.y)**2);
+        }
+
+        fireRadial() {
+            const directions = this.level === 5 ? 12 : 8;
+            for (let i = 0; i < directions; i++) {
+                const angle = (Math.PI * 2 / directions) * i;
+                projectiles.push(new Projectile(this.x, this.y, null, 'frog_egg', this.getFinalDamage(), this, angle));
+            }
+        }
+
+        draw() {
+            if (selectedTower === this) {
+                ctx.beginPath(); ctx.arc(this.x, this.y, this.range, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.12)'; ctx.fill();
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)'; ctx.setLineDash([6, 4]); ctx.stroke(); ctx.setLineDash([]);
+            }
+
+            ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+            
+            const tColors = { monkey: '#b0bec5', frog: '#c8e6c9', elephant: '#bbdefb', cat: '#ffe0b2', viper: '#e1bee7', dragon: '#1a1a1a' };
+            ctx.fillStyle = tColors[this.type] || '#ffffff'; ctx.fill();
+            ctx.strokeStyle = selectedTower === this ? '#ffeb3b' : (this.type === 'dragon' ? '#ef4444' : '#5d4037');
+            ctx.lineWidth = selectedTower === this ? 3 : 2.5; ctx.stroke();
+
+            const emojis = { monkey: '🐒', frog: '🐸', elephant: '🐘', cat: '🐱', viper: '🐍', dragon: '🐉' };
+            ctx.fillStyle = 'white'; ctx.font = this.type === 'dragon' ? '28px Arial' : '22px Arial';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(emojis[this.type] || '❓', this.x, this.y + 1);
+            
+            if (this.type === 'dragon') {
+                ctx.fillStyle = '#ef4444'; ctx.font = 'bold 10px sans-serif'; ctx.fillText("★ LEGEND", this.x, this.y - 32);
+            } else {
+                ctx.fillStyle = '#ffeb3b'; ctx.font = 'bold 9px sans-serif';
+                ctx.fillText("★".repeat(this.level), this.x, this.y - 30);
+            }
+        }
+    }
+
+
+    // 3. 투사체 정의
+    class Projectile {
+        constructor(x, y, target, type, damage, owner, angle = 0) {
+            this.x = x; this.y = y; this.target = target;
+            this.type = type; this.damage = damage;
+            this.owner = owner; this.angle = angle; 
+            
+            this.speed = 8; this.radius = 4; this.color = '#ffffff';
+            this.initTypeStats();
+        }
+
+        initTypeStats() {
+            if (this.type === 'monkey') { this.speed = 12; this.radius = 5; this.color = '#ffeb3b'; } 
+            else if (this.type === 'frog_egg') { this.speed = 6; this.radius = 4; this.color = '#e0f2f1'; this.distanceTraveled = 0; this.maxDistance = this.owner.range; } 
+            else if (this.type === 'cat') { this.speed = 12; this.radius = 5; this.color = '#ff9100'; } 
+            else if (this.type === 'viper') { this.speed = 10; this.radius = 4.5; this.color = '#a73aed'; }
+            else if (this.type === 'dragon') { this.speed = 16; this.radius = 8; this.color = '#ef4444'; } 
+        }
+
+        update() {
+            if (this.type === 'frog_egg') {
+                this.x += Math.cos(this.angle) * this.speed; this.y += Math.sin(this.angle) * this.speed;
+                this.distanceTraveled += this.speed;
+                for (const enemy of enemies) {
+                    if (Math.sqrt((enemy.x - this.x)**2 + (enemy.y - this.y)**2) < enemy.radius + this.radius) {
+                        this.applyDamage(enemy); this.destroySelf(); return;
+                    }
+                }
+                if (this.distanceTraveled >= this.maxDistance) this.destroySelf();
+            } else {
+                if (!enemies.includes(this.target)) {
+                    const fallback = this.owner.findTarget();
+                    if (fallback) this.target = fallback; else { this.destroySelf(); return; }
+                }
+
+                const dx = this.target.x - this.x; const dy = this.target.y - this.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (dist < this.speed) {
+                    if (this.type === 'dragon') {
+                        createParticles(this.x, this.y, '#ff5722', 15);
+                        enemies.forEach(e => {
+                            if (Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2) < 60) this.applyDamage(e);
+                        });
+                    } else {
+                        this.applyDamage(this.target);
+                    }
+                    this.destroySelf();
+                } else {
+                    this.x += (dx / dist) * this.speed; this.y += (dy / dist) * this.speed;
+                }
+            }
+        }
+
+        applyDamage(enemy) {
+            enemy.hp -= this.damage;
+
+            if (this.type === 'viper') {
+                enemy.poisonTimer = 300; 
+                enemy.poisonTick = 0;
+                // 독 데미지도 1.5배 시너지 및 보너스 합산 반영을 위해 파생 연산 추가
+                enemy.poisonDamage = Math.floor(this.damage / this.owner.damage * this.owner.poisonDot) || 1; 
+            }
+
+            if (enemy.hp <= 0) {
+                const idx = enemies.indexOf(enemy);
+                if (idx > -1) {
+                    money += enemy.reward; this.owner.kills++;
+                    if (enemy.isBoss) {
+                        upgradeCoins++;
+                        showToast("💀 보스 처치! 대량의 자금과 🪙 코인 1개 획득!", "bg-yellow-600");
+                        createParticles(enemy.x, enemy.y, '#ff0000', 30);
+                    }
+                    enemies.splice(idx, 1);
+                    updateUI(); if (selectedTower === this.owner) updateDetailPanel();
+                }
+            }
+        }
+
+        destroySelf() {
+            const idx = projectiles.indexOf(this);
+            if (idx > -1) projectiles.splice(idx, 1);
+        }
+
+        draw() {
+            ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+            ctx.fillStyle = this.color; ctx.fill();
+            if (this.type === 'dragon') { 
+                ctx.shadowBlur = 10; ctx.shadowColor = '#ff5722'; ctx.fill(); ctx.shadowBlur = 0;
+            }
+        }
+    }
+
+    // 4. 직선형 관통 빔 (코끼리 전용)
+    class Beam {
+        constructor(x1, y1, x2, y2, life, width, color) {
+            this.x1 = x1; this.y1 = y1; this.x2 = x2; this.y2 = y2;
+            this.life = life; this.maxLife = life;
+            this.width = width; this.color = color;
+        }
+        update() { this.life--; }
+        draw(ctx) {
+            ctx.save();
+            ctx.globalAlpha = this.life / this.maxLife;
+            ctx.beginPath();
+            ctx.moveTo(this.x1, this.y1);
+            ctx.lineTo(this.x2, this.y2);
+            ctx.strokeStyle = this.color;
+            ctx.lineWidth = this.width;
+            ctx.lineCap = 'round';
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = this.color;
+            ctx.stroke();
+            ctx.restore();
+        }
+    }
+
+
+    // --- 파티클 효과 ---
+    function createParticles(x, y, color, count = 10) {
+        for(let i=0; i<count; i++) {
+            particles.push({
+                x: x, y: y,
+                vx: (Math.random() - 0.5) * 6, vy: (Math.random() - 0.5) * 6,
+                life: 1.0, color: color
+            });
+        }
+    }
+    function updateAndDrawParticles() {
+        for(let i = particles.length - 1; i >= 0; i--) {
+            let p = particles[i];
+            p.x += p.vx; p.y += p.vy; p.life -= 0.05;
+            if (p.life <= 0) { particles.splice(i, 1); continue; }
+            ctx.globalAlpha = p.life;
+            ctx.fillStyle = p.color;
+            ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI*2); ctx.fill();
+            ctx.globalAlpha = 1.0;
+        }
+    }
+
+
+    // --- 인터랙션 (길 편집 및 국왕 위치 변경) ---
+
+    function toggleEditPathMode() {
+        if (isWaveActive) { showToast("웨이브 진행 중에는 편집 불가!", "bg-red-500"); return; }
+
+        isEditPathMode = !isEditPathMode;
+        selectedTower = null; ghostTower = null;
+        detailPanel.classList.add('hidden');
+        document.querySelectorAll('.tower-card').forEach(c => c.classList.remove('selected'));
+
+        const btn = document.getElementById('edit-path-btn');
+        const moveKingBtn = document.getElementById('move-king-btn');
+        const cards = document.querySelectorAll('.tower-card');
+
+        if (isEditPathMode) {
+            btn.innerText = "💾 길 편집 완료";
+            btn.className = "w-full bg-green-600 hover:bg-green-500 text-white font-bold py-1.5 px-2 rounded shadow border border-green-800 transition-all text-[11px] animate-pulse";
+            moveKingBtn.classList.remove('hidden');
+            cards.forEach(c => { c.style.opacity = '0.4'; c.style.pointerEvents = 'none'; });
+            editHistory = [];
+            showToast("🛠️ 길 편집: 건설($30) / 파괴(+$15)", "bg-slate-600");
+        } else {
+            if (!isPathValid) {
+                showToast("⚠️ 목적지까지 길이 끊어져 있습니다!", "bg-red-500");
+                isEditPathMode = true; return;
+            }
+            btn.innerText = "🛠️ 길 편집 ($30)";
+            btn.className = "w-full bg-slate-700 hover:bg-slate-600 text-white font-bold py-1.5 px-2 rounded shadow border border-slate-900 transition-all text-[11px]";
+            
+            moveKingBtn.classList.add('hidden');
+            isMovingKing = false;
+            moveKingBtn.className = "w-full bg-purple-700 hover:bg-purple-600 text-white font-bold py-1 px-2 rounded shadow border border-purple-900 transition-all text-[10px]";
+            moveKingBtn.innerText = "👑 국왕 위치 변경";
+
+            cards.forEach(c => { c.style.opacity = '1.0'; c.style.pointerEvents = 'auto'; });
+            editHistory = [];
+            showToast("💾 맵 구조가 저장되었습니다.", "bg-green-600");
+        }
+        updateUI();
+    }
+
+    function toggleMoveKingMode() {
+        if (!isEditPathMode) return;
+        isMovingKing = !isMovingKing;
+        const btn = document.getElementById('move-king-btn');
+        if (isMovingKing) {
+            btn.className = "w-full bg-purple-500 text-white font-bold py-1 px-2 rounded shadow border border-purple-700 transition-all text-[10px] animate-pulse";
+            btn.innerText = "📍 이동할 타일을 클릭하세요";
+            showToast("국왕이 새롭게 앉을 타일을 클릭하세요.", "bg-purple-600");
+        } else {
+            btn.className = "w-full bg-purple-700 hover:bg-purple-600 text-white font-bold py-1 px-2 rounded shadow border border-purple-900 transition-all text-[10px]";
+            btn.innerText = "👑 국왕 위치 변경";
+        }
+    }
+
+    function undoEdit() {
+        if (!isEditPathMode || editHistory.length === 0) return;
+        const prevState = editHistory.pop();
+        grid = prevState.grid; money = prevState.money; activePath = prevState.activePath; isPathValid = prevState.isPathValid;
+        if (prevState.END_CELL) END_CELL = prevState.END_CELL;
+        if (prevState.kingPos) kingPos = prevState.kingPos;
+        updateUI();
+    }
+
+    // 타워 이동 기능 (MOVE)
+    function moveSelectedTower() {
+        if (!selectedTower) return;
+        ghostTower = { 
+            type: selectedTower.type, 
+            cost: 0, 
+            range: selectedTower.range,
+            isMoving: true,
+            originalTower: selectedTower
+        };
+        towers.splice(towers.indexOf(selectedTower), 1); 
+        selectedTower = null; 
+        detailPanel.classList.add('hidden'); 
+        catAbilityBtn.classList.add('hidden');
+        isSelectingCatTarget = false;
+        checkSynergy();
+        showToast("원하는 새로운 위치를 클릭하여 타워를 재배치하세요.", "bg-blue-600");
+        updateUI();
+    }
+
+    function setGhostTower(type, cost) {
+        if (isEditPathMode) return;
+        if (money < cost) { showToast("자금이 부족합니다!", "bg-red-500"); return; }
+        selectedTower = null; detailPanel.classList.add('hidden'); catAbilityBtn.classList.add('hidden');
+        isSelectingCatTarget = false;
+
+        ghostTower = { type, cost, range: 100 };
+        document.querySelectorAll('.tower-card').forEach(c => c.classList.remove('selected'));
+        document.getElementById('tower-' + type).classList.add('selected');
+    }
+
+    function mergeSelectedTower() {
+        if (!selectedTower) return;
+        if (selectedTower.type === 'dragon') { showToast("전설의 영웅은 조합할 수 없습니다!", "bg-purple-600"); return; }
+        if (selectedTower.level >= 5) { showToast("이미 5성(MAX) 최종 한계에 도달했습니다!", "bg-yellow-500"); return; }
+
+        const materialIdx = towers.findIndex(t => t !== selectedTower && t.type === selectedTower.type && t.level === selectedTower.level);
+        
+        if (materialIdx > -1) {
+            towers.splice(materialIdx, 1);
+            selectedTower.executeUpgrade();
+            checkSynergy();
+            showToast(`${selectedTower.level}성으로 진화 성공! ✨`, "bg-green-600");
+            createParticles(selectedTower.x, selectedTower.y, '#ffeb3b', 40);
+            updateDetailPanel();
+        } else {
+            showToast(`합성 실패: 맵에 동일한 ${selectedTower.level}성 타워가 하나 더 필요합니다!`, "bg-red-600 animate-bounce");
+        }
+    }
+
+    function sellSelectedTower() {
+        if (selectedTower) {
+            money += selectedTower.sellValue;
+            towers.splice(towers.indexOf(selectedTower), 1);
+            selectedTower = null; detailPanel.classList.add('hidden'); catAbilityBtn.classList.add('hidden');
+            isSelectingCatTarget = false; 
+            checkSynergy();
+            updateUI();
+        }
+    }
+
+    function activateCatAbility() {
+        if (!selectedTower || selectedTower.type !== 'cat') return;
+        if (selectedTower.hasUsedAbility) { showToast("이미 사용했습니다!", "bg-yellow-500"); return; }
+        isSelectingCatTarget = true;
+        showToast("속박할 적을 클릭하세요!", "bg-blue-600 animate-pulse");
+    }
+
+    function processGachaTower(x, y, gachaType) {
+        let finalType = 'monkey';
+        let finalLevel = 1;
+        let roll = Math.random() * 100;
+
+        if (gachaType === 'random') {
+            if (roll < 35) finalType = 'monkey';
+            else if (roll < 60) finalType = 'frog';
+            else if (roll < 80) finalType = 'cat';
+            else if (roll < 92) finalType = 'elephant';
+            else finalType = 'viper';
+            finalLevel = 1;
+
+        } else if (gachaType === 'legend') {
+            let legendRoll = Math.random() * 110;
+            if (legendRoll < 50) finalLevel = 1;
+            else if (legendRoll < 80) finalLevel = 2;
+            else if (legendRoll < 100) finalLevel = 3;
+            else if (legendRoll < 105) finalLevel = 4;
+            else if (legendRoll < 108) finalLevel = 5;
+            else { finalType = 'dragon'; finalLevel = 1; }
+
+            if (finalType !== 'dragon') {
+                const types = ['monkey', 'frog', 'elephant', 'cat', 'viper'];
+                finalType = types[Math.floor(Math.random() * types.length)];
+            }
+        }
+        
+        const newTower = new Tower(x, y, finalType);
+        newTower.level = finalLevel;
+        newTower.updateStatsByLevel(); 
+        
+        towers.push(newTower);
+        checkSynergy();
+        
+        if (finalType === 'dragon') {
+            showToast("🐉 전설의 '화염 흑룡'이 강림했습니다!!!", "bg-purple-700 animate-bounce");
+            createParticles(x, y, '#ef4444', 50);
+        } else if (finalLevel >= 4) {
+            showToast(`🌟 대박! ${finalLevel}성 타워 등장!`, "bg-yellow-600");
+            createParticles(x, y, '#ffeb3b', 30);
+        } else {
+            createParticles(x, y, '#ffffff', 15);
+        }
+    }
+
+
+    canvas.addEventListener('mousemove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        mousePos.x = e.clientX - rect.left; mousePos.y = e.clientY - rect.top;
+    });
+
+    canvas.addEventListener('mousedown', (e) => {
+        if (!isGameRunning) return;
+
+        const cellX = Math.floor(mousePos.x / CELL_SIZE);
+        const cellY = Math.floor(mousePos.y / CELL_SIZE);
+
+        if (isEditPathMode) {
+            if (isMovingKing) {
+                if (cellX === START_CELL.x && cellY === START_CELL.y) { showToast("출발지와 겹칠 수 없습니다!", "bg-red-500"); return; }
+                if (cellX < 0 || cellX >= COLS || cellY < 0 || cellY >= ROWS) return;
+                
+                const hasTowerOnIt = towers.some(t => Math.floor(t.x / CELL_SIZE) === cellX && Math.floor(t.y / CELL_SIZE) === cellY);
+                if (hasTowerOnIt) { showToast("타워가 세워진 곳에는 왕좌를 배치할 수 없습니다!", "bg-red-500"); return; }
+
+                editHistory.push({ grid: JSON.parse(JSON.stringify(grid)), money: money, activePath: JSON.parse(JSON.stringify(activePath)), isPathValid: isPathValid, END_CELL: {x: END_CELL.x, y: END_CELL.y}, kingPos: {x: kingPos.x, y: kingPos.y} });
+                if (editHistory.length > 50) editHistory.shift();
+                
+                END_CELL = { x: cellX, y: cellY };
+                kingPos = { x: cellX * CELL_SIZE + CELL_SIZE / 2, y: cellY * CELL_SIZE + CELL_SIZE / 2 };
+                grid[cellX][cellY] = 1; 
+
+                isMovingKing = false;
+                const btn = document.getElementById('move-king-btn');
+                btn.className = "w-full bg-purple-700 hover:bg-purple-600 text-white font-bold py-1 px-2 rounded shadow border border-purple-900 transition-all text-[10px]";
+                btn.innerText = "👑 국왕 위치 변경";
+
+                const calculated = calculatePath();
+                if (calculated) { activePath = calculated; isPathValid = true; } else { isPathValid = false; }
+                updateUI(); showToast("👑 국왕의 위치가 성공적으로 이동되었습니다!", "bg-green-600"); return;
+            }
+
+            if ((cellX === START_CELL.x && cellY === START_CELL.y) || (cellX === END_CELL.x && cellY === END_CELL.y)) { showToast("출발지와 목적지는 파괴할 수 없습니다!", "bg-yellow-500"); return; }
+            if (cellX < 0 || cellX >= COLS || cellY < 0 || cellY >= ROWS) return;
+
+            if (grid[cellX][cellY] === 0) {
+                if (money >= 30) {
+                    editHistory.push({ grid: JSON.parse(JSON.stringify(grid)), money: money, activePath: JSON.parse(JSON.stringify(activePath)), isPathValid: isPathValid, END_CELL: {x: END_CELL.x, y: END_CELL.y}, kingPos: {x: kingPos.x, y: kingPos.y} });
+                    if (editHistory.length > 50) editHistory.shift();
+                    grid[cellX][cellY] = 1; money -= 30;
+                } else { showToast("길 건설 자금($30)이 부족합니다!", "bg-red-500"); return; }
+            } else {
+                const hasTowerOnIt = towers.some(t => Math.floor(t.x / CELL_SIZE) === cellX && Math.floor(t.y / CELL_SIZE) === cellY);
+                if (hasTowerOnIt) { showToast("타워가 있는 길은 제거 불가!", "bg-yellow-500"); return; }
+
+                editHistory.push({ grid: JSON.parse(JSON.stringify(grid)), money: money, activePath: JSON.parse(JSON.stringify(activePath)), isPathValid: isPathValid, END_CELL: {x: END_CELL.x, y: END_CELL.y}, kingPos: {x: kingPos.x, y: kingPos.y} });
+                if (editHistory.length > 50) editHistory.shift();
+                grid[cellX][cellY] = 0; money += 15;
+            }
+
+            const calculated = calculatePath();
+            if (calculated) { activePath = calculated; isPathValid = true; } else { isPathValid = false; }
+            updateUI(); return;
+        }
+
+        if (isSelectingCatTarget && selectedTower && selectedTower.type === 'cat') {
+            let foundTarget = null;
+            for (const enemy of enemies) {
+                if (Math.sqrt((enemy.x - mousePos.x)**2 + (enemy.y - mousePos.y)**2) < enemy.radius + 15) { foundTarget = enemy; break; }
+            }
+            if (foundTarget) {
+                const baseStun = selectedTower.stunFrames;
+                const stunDuration = foundTarget.isBoss ? Math.floor(baseStun * 0.25) : baseStun;
+                foundTarget.stunTimer = stunDuration;
+                selectedTower.hasUsedAbility = true;
+                isSelectingCatTarget = false;
+                if (foundTarget.isBoss) showToast("야옹! 보스는 빠르게 풀려납니다!", "bg-red-600");
+                else showToast("야옹! 적을 완벽하게 묶었습니다!", "bg-purple-600");
+                updateDetailPanel();
+            } else { isSelectingCatTarget = false; }
+            return;
+        }
+
+        if (ghostTower) {
+            if (grid[cellX][cellY] === 1) { showToast("길 위에는 설치할 수 없습니다!", "bg-red-500"); return; }
+            let overlap = towers.some(t => Math.sqrt((t.x - mousePos.x)**2 + (t.y - mousePos.y)**2) < 30);
+            if(overlap) { showToast("다른 타워와 너무 가깝습니다!", "bg-red-500"); return; }
+
+            if (ghostTower.isMoving) {
+                ghostTower.originalTower.x = mousePos.x;
+                ghostTower.originalTower.y = mousePos.y;
+                towers.push(ghostTower.originalTower);
+                showToast("타워 위치가 성공적으로 변경되었습니다.", "bg-green-500");
+            } else {
+                money -= ghostTower.cost;
+                processGachaTower(mousePos.x, mousePos.y, ghostTower.type);
+            }
+            
+            checkSynergy();
+            ghostTower = null;
+            document.querySelectorAll('.tower-card').forEach(c => c.classList.remove('selected'));
+            updateUI();
+        } else {
+            let found = false;
+            for (const t of towers) {
+                if (Math.sqrt((t.x - mousePos.x)**2 + (t.y - mousePos.y)**2) < t.radius) {
+                    selectedTower = t; updateDetailPanel(); detailPanel.classList.remove('hidden'); found = true; break;
+                }
+            }
+            if (!found) { selectedTower = null; detailPanel.classList.add('hidden'); catAbilityBtn.classList.add('hidden'); isSelectingCatTarget = false; }
+        }
+    });
+
+    function updateDetailPanel() {
+        if (!selectedTower) return;
+        const typeNames = { monkey: "원숭이", frog: "방사 개구리", elephant: "폭풍 코끼리", cat: "속박 고양이", viper: "맹독 독사", dragon: "화염의 흑룡" };
+        
+        document.getElementById('detail-name').innerText = typeNames[selectedTower.type] || '타워';
+        document.getElementById('detail-lv').innerText = selectedTower.type === 'dragon' ? '1성 (MAX)' : selectedTower.level + "성";
+        document.getElementById('detail-dmg').innerText = selectedTower.getFinalDamage();
+        document.getElementById('detail-kills').innerText = selectedTower.kills;
+        document.getElementById('sell-price').innerText = '$' + selectedTower.sellValue;
+        
+        if (selectedTower.type === 'cat') {
+            catAbilityBtn.classList.remove('hidden');
+            if (selectedTower.hasUsedAbility) {
+                catAbilityBtn.disabled = true; catAbilityBtn.innerText = "사용 완료";
+                catAbilityBtn.className = "bg-gray-600 text-gray-400 p-1.5 rounded font-black mt-1 cursor-not-allowed";
+            } else {
+                catAbilityBtn.disabled = false; catAbilityBtn.innerText = "⚡ 속박 발동 (1회)";
+                catAbilityBtn.className = "bg-yellow-500 hover:bg-yellow-400 text-black p-1.5 rounded font-black mt-1 transition-colors";
+            }
+        } else { catAbilityBtn.classList.add('hidden'); }
+
+        const upBtn = detailPanel.querySelector('button[onclick="mergeSelectedTower()"]');
+        if (selectedTower.level >= 5 || selectedTower.type === 'dragon') {
+            upBtn.disabled = true; 
+            upBtn.innerHTML = `<span>MAX LEVEL</span>`;
+            upBtn.className = "bg-gray-600 p-2 rounded font-bold mt-2 flex flex-col items-center cursor-not-allowed text-gray-400";
+        } else {
+            upBtn.disabled = false; 
+            upBtn.innerHTML = `<span>조합 (MERGE)</span><span class="text-[8px] font-normal text-blue-200">동일한 타워 1개 필요</span>`;
+            upBtn.className = "bg-blue-600 hover:bg-blue-500 p-2 rounded font-bold mt-2 transition-colors flex flex-col items-center";
+        }
+    }
+
+    function updateUI() {
+        moneyEl.innerText = '$' + money;
+        coinEl.innerText = upgradeCoins;
+        livesEl.innerText = lives;
+        roundEl.innerText = round;
+
+        document.getElementById('global-upgrade-cost-txt').innerText = '$' + globalDmgCost;
+        document.getElementById('global-upgrade-lv-txt').innerText = 'Lv.' + globalDmgLv;
+
+        const undoBtn = document.getElementById('undo-path-btn');
+        if (isEditPathMode && editHistory.length > 0) {
+            undoBtn.disabled = false;
+            undoBtn.className = "w-full bg-red-700 hover:bg-red-600 text-white font-bold py-1 px-2 rounded shadow border border-red-900 transition-all text-[10px] cursor-pointer";
+        } else {
+            undoBtn.disabled = true;
+            undoBtn.className = "w-full bg-gray-800 text-gray-500 font-bold py-1 px-2 rounded shadow border border-gray-900 transition-all text-[10px] cursor-not-allowed";
+        }
+
+        const hwBtn = document.getElementById('homework-btn');
+        const totalHomework = normalHomework + bossHomework;
+        if (totalHomework > 0) {
+            hwBtn.innerText = `남은 숙제: ${totalHomework}개 (일반 ${normalHomework} / 보스 ${bossHomework})`;
+            hwBtn.className = "w-full bg-red-600 hover:bg-red-500 text-white font-bold text-[10px] py-1.5 rounded border border-red-400 transition-colors animate-pulse cursor-pointer shadow-[0_0_10px_rgba(239,68,68,0.8)]";
+            hwBtn.disabled = false;
+        } else {
+            hwBtn.innerText = "밀린 숙제 없음!";
+            hwBtn.className = "w-full bg-slate-700 text-gray-400 font-bold text-[10px] py-1.5 rounded border border-slate-600 transition-colors cursor-not-allowed";
+            hwBtn.disabled = true;
+        }
+
+        if (totalHomework > 0) {
+            goBtn.disabled = true; goBtn.innerText = "숙제 제출!"; goBtn.style.background = "linear-gradient(to bottom, #ef4444, #991b1b)";
+        } else if (!isPathValid) {
+            goBtn.disabled = true; goBtn.innerText = "경로 단절"; goBtn.style.background = "linear-gradient(to bottom, #ef4444, #991b1b)";
+        } else if (isEditPathMode) {
+            goBtn.disabled = true; goBtn.innerText = "편집중"; goBtn.style.background = "linear-gradient(to bottom, #6b7280, #374151)";
+        } else if (isWaveActive) {
+            goBtn.disabled = true; goBtn.innerText = isBossWave ? "BOSS!" : "DEFENDING"; 
+            goBtn.style.background = isBossWave ? "linear-gradient(to bottom, #dc2626, #7f1d1d)" : "linear-gradient(to bottom, #eab308, #a16207)";
+        } else {
+            goBtn.disabled = false; goBtn.innerText = "GO!"; goBtn.style.background = "linear-gradient(to bottom, #76ff03, #33691e)";
+        }
+    }
+
+    function startWave() {
+        if (isWaveActive || isEditPathMode || !isPathValid || normalHomework + bossHomework > 0) return;
+        isWaveActive = true;
+        
+        isBossWave = (round % 5 === 0);
+        if(isBossWave) showToast(`⚠️ ${round} 라운드: 거대 보스 웨이브!!`, "bg-red-700 animate-pulse");
+
+        waveEnemiesSpawned = 0;
+        const spawnQueue = generateRoundEnemies(round, isBossWave);
+        waveEnemiesTotal = spawnQueue.length;
+        
+        updateUI();
+
+        towers.forEach(t => { if (t.type === 'cat') t.hasUsedAbility = false; });
+        if (selectedTower) updateDetailPanel();
+
+        let spawned = 0;
+        const spawnInterval = setInterval(() => {
+            if (!isGameRunning) { clearInterval(spawnInterval); return; }
+            if (spawned < spawnQueue.length) {
+                enemies.push(spawnQueue[spawned]);
+                spawned++; waveEnemiesSpawned = spawned; 
+            } else { clearInterval(spawnInterval); }
+        }, isBossWave ? 800 : Math.max(600 - (round * 15), 200)); 
+    }
+
+    function generateRoundEnemies(r, isBossWaveFlag) {
+        const queue = [];
+        let isHardcore = r >= 21; // 하드코어 모드 여부
+
+        if (isBossWaveFlag) {
+            let bossCount = isHardcore ? 1 + Math.floor((r - 20) / 5) : 1; // 하드코어 보스는 라운드에 비례해 수 증가
+            const minionCount = isHardcore ? 10 + r : 3 + Math.floor(r * 0.5);
+            for(let i=0; i<minionCount; i++) queue.push(new Enemy(Math.min(r, 17), r * (isHardcore ? 2.0 : 0.5)));
+            for(let i=0; i<bossCount; i++) queue.push(new Enemy(r, 0, true, r, isHardcore));
+        } else {
+            const spawnCount = isHardcore ? 30 + (r * 5) : 10 + (r * 4); // 물량 대폭발
+            for (let i = 0; i < spawnCount; i++) {
+                let maxAvailableLv = Math.min(1 + Math.floor(r * 1.2), 17);
+                let level = 1;
+                if (maxAvailableLv > 1) {
+                    const rand = Math.random();
+                    if (rand > 0.5) level = maxAvailableLv; 
+                    else if (rand > 0.2) level = Math.max(1, maxAvailableLv - 1); 
+                    else level = Math.max(1, Math.floor(Math.random() * maxAvailableLv) + 1); 
+                }
+                const hpBonus = Math.max(0, (r - 4) * (isHardcore ? 2.5 : 0.5)); 
+                queue.push(new Enemy(level, hpBonus));
+            }
+        }
+        return queue; 
+    }
+
+    function drawGridAndPath() {
+        for (let x = 0; x < COLS; x++) {
+            for (let y = 0; y < ROWS; y++) {
+                const px = x * CELL_SIZE; const py = y * CELL_SIZE;
+                if (grid[x][y] === 1) {
+                    ctx.fillStyle = '#d2b48c'; ctx.fillRect(px, py, CELL_SIZE, CELL_SIZE);
+                    ctx.strokeStyle = '#b59362'; ctx.lineWidth = 1; ctx.strokeRect(px, py, CELL_SIZE, CELL_SIZE);
+                }
+                if (isEditPathMode) { ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)'; ctx.lineWidth = 1; ctx.strokeRect(px, py, CELL_SIZE, CELL_SIZE); }
+            }
+        }
+        ctx.fillStyle = 'rgba(46, 125, 50, 0.35)'; ctx.fillRect(START_CELL.x * CELL_SIZE, START_CELL.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+        ctx.fillStyle = 'rgba(198, 40, 40, 0.35)'; ctx.fillRect(END_CELL.x * CELL_SIZE, END_CELL.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+    }
+
+    function drawKingSangwoo() {
+        ctx.save();
+        let shakeOffset = 0;
+        if (kingShakeTime > 0) { shakeOffset = Math.sin(kingShakeTime * 2) * 5; kingShakeTime--; }
+        ctx.translate(kingPos.x + shakeOffset, kingPos.y);
+
+        ctx.fillStyle = '#b71c1c'; ctx.fillRect(-22, -15, 44, 35);
+        ctx.fillStyle = '#ffb300'; ctx.fillRect(-26, -15, 4, 35); ctx.fillRect(22, -15, 4, 35);
+
+        ctx.fillStyle = '#d32f2f'; ctx.beginPath(); ctx.arc(0, 10, 18, 0, Math.PI, true); ctx.fill();
+
+        ctx.beginPath(); ctx.arc(0, -8, 12, 0, Math.PI * 2); ctx.fillStyle = '#ffe0b2'; ctx.fill();
+        ctx.strokeStyle = '#3e2723'; ctx.lineWidth = 1.5; ctx.stroke();
+
+        ctx.fillStyle = '#3e2723'; ctx.fillRect(-5, -11, 2, 2); ctx.fillRect(3, -11, 2, 2);
+        ctx.beginPath(); if (lives < 40) ctx.arc(0, -5, 4, 0, Math.PI, true); else ctx.arc(0, -6, 4, 0, Math.PI);
+        ctx.strokeStyle = '#3e2723'; ctx.lineWidth = 1.5; ctx.stroke();
+
+        ctx.beginPath(); ctx.moveTo(-10, -18); ctx.lineTo(-12, -26); ctx.lineTo(-5, -21); ctx.lineTo(0, -28); ctx.lineTo(5, -21); ctx.lineTo(12, -26); ctx.lineTo(10, -18); ctx.closePath();
+        ctx.fillStyle = '#ffd54f'; ctx.fill(); ctx.strokeStyle = '#ff8f00'; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.fillStyle = '#e91e63'; ctx.beginPath(); ctx.arc(0, -28, 2, 0, Math.PI*2); ctx.arc(-12, -26, 1.5, 0, Math.PI*2); ctx.arc(12, -26, 1.5, 0, Math.PI*2); ctx.fill();
+
+        ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(-35, -46, 70, 14);
+        ctx.fillStyle = '#ffffff'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText("👑 킹상우", 0, -38);
+
+        const maxKingHp = 150; const hpPct = Math.max(0, lives / maxKingHp);
+        ctx.fillStyle = '#333333'; ctx.fillRect(-30, 26, 60, 5);
+        ctx.fillStyle = hpPct > 0.4 ? '#4caf50' : '#f44336'; ctx.fillRect(-30, 26, 60 * hpPct, 5);
+
+        if (kingBubbleTimer > 0 && kingBubbleText) {
+            kingBubbleTimer--;
+            ctx.font = 'bold 10px sans-serif'; const textWidth = ctx.measureText(kingBubbleText).width;
+            
+            const isNearTop = kingPos.y < 80;
+            const bubbleY = isNearTop ? 45 : -75;
+            const tailY = isNearTop ? 25 : -55;
+            const tailDir = isNearTop ? -1 : 1;
+
+            ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#3e2723'; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.roundRect(-textWidth/2 - 8, bubbleY, textWidth + 16, 20, 5); ctx.fill(); ctx.stroke();
+            
+            ctx.beginPath(); ctx.moveTo(-5, tailY); ctx.lineTo(0, tailY + (5 * tailDir)); ctx.lineTo(5, tailY); 
+            ctx.fillStyle = '#ffffff'; ctx.fill();
+            
+            ctx.fillStyle = '#3e2723'; ctx.fillText(kingBubbleText, 0, bubbleY + 10);
+        }
+        ctx.restore();
+    }
+
+    function handleVictory() {
+        isGameRunning = false;
+        document.getElementById('victory-modal').classList.remove('hidden');
+    }
+
+
+    function gameLoop() {
+        if (!isGameRunning) return;
+
+        ctx.fillStyle = '#4ade80'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        drawGridAndPath();
+        drawKingSangwoo();
+
+        towers.forEach(t => { t.update(); t.draw(); });
+        for (let i = enemies.length - 1; i >= 0; i--) { enemies[i].update(); if (enemies[i]) enemies[i].draw(); }
+        for (let i = projectiles.length - 1; i >= 0; i--) { projectiles[i].update(); if (projectiles[i]) projectiles[i].draw(); }
+        
+        for (let i = beams.length - 1; i >= 0; i--) {
+            beams[i].update();
+            if (beams[i].life <= 0) beams.splice(i, 1);
+            else beams[i].draw(ctx);
+        }
+
+        updateAndDrawParticles();
+
+        if (ghostTower) {
+            ctx.beginPath(); ctx.arc(mousePos.x, mousePos.y, ghostTower.range, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.18)'; ctx.fill(); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.stroke();
+            ctx.globalAlpha = 0.65; ctx.beginPath(); ctx.arc(mousePos.x, mousePos.y, 22, 0, Math.PI * 2);
+            
+            if (ghostTower.isMoving) {
+                const tColors = { monkey: '#b0bec5', frog: '#c8e6c9', elephant: '#bbdefb', cat: '#ffe0b2', viper: '#e1bee7', dragon: '#1a1a1a' };
+                ctx.fillStyle = tColors[ghostTower.type] || '#ffffff'; ctx.fill(); 
+                ctx.globalAlpha = 1.0;
+            } else {
+                ctx.fillStyle = ghostTower.type === 'legend' ? '#ef4444' : '#ffb300'; ctx.fill(); 
+                ctx.globalAlpha = 1.0;
+                ctx.fillStyle = '#fff'; ctx.font = 'bold 24px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText('?', mousePos.x, mousePos.y + 2);
+            }
+        }
+
+        if (isWaveActive && waveEnemiesSpawned >= waveEnemiesTotal && enemies.length === 0) {
+            isWaveActive = false;
+            if (round >= MAX_ROUND) {
+                handleVictory();
+                return;
+            }
+            round++;
+            money += 50 + (round * 10); 
+            isBossWave = false;
+            updateUI();
+            showToast(`라운드 클리어! 보너스 골드 획득 💰`, "bg-green-600");
+        }
+
+        requestAnimationFrame(gameLoop);
+    }
+
+    function handleGameOver() {
+        isGameRunning = false;
+        document.getElementById('end-title').innerText = "GAME OVER";
+        document.getElementById('end-desc').innerHTML = `킹상우 국왕님이 쓰러지셨습니다...<br>도달 라운드: <span class='text-yellow-400 font-bold'>${round}라운드</span>`;
+        document.getElementById('gameover-modal').classList.remove('hidden');
+    }
+
+    window.onload = () => { preloadAssets(); };
+</script>
+</body>
+</html>
