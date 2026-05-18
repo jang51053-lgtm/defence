@@ -536,9 +536,8 @@
             optionsDiv.appendChild(btn);
         });
 
-        // 스킵 버튼 데미지 계산 반영
-        const totalHomework = normalHomework + bossHomework;
-        const skipDamage = totalHomework * 10;
+        // 스킵 버튼 데미지 계산 반영 (일반 숙제 10, 보스 숙제 50)
+        const skipDamage = (normalHomework * 10) + (bossHomework * 50);
         document.getElementById('skip-hw-btn').innerText = `모든 숙제 포기 (-${skipDamage} HP)`;
 
         document.getElementById('homework-modal').classList.remove('hidden');
@@ -564,8 +563,7 @@
     }
 
     function skipAllHomework() {
-        const totalHomework = normalHomework + bossHomework;
-        const damage = totalHomework * 10;
+        const damage = (normalHomework * 10) + (bossHomework * 50);
         
         lives -= damage;
         if (lives < 0) lives = 0;
